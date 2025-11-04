@@ -13,15 +13,7 @@
   to = "/.netlify/functions/:splat"
   status = 200
 
-[[redirects]]
-  from = "/paypal-api/checkout/orders/create"
-  to = "/.netlify/functions/paypal-create"
-  status = 200
-
-[[redirects]]
-  from = "/paypal-api/checkout/orders/:orderId/capture"
-  to = "/.netlify/functions/paypal-capture?orderId=:orderId"
-  status = 200
+## Eliminados redirects de PayPal
 
 [[redirects]]
   from = "/auth/register"

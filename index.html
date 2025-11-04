@@ -7,6 +7,8 @@
 
   <!-- Tailwind CDN (rápido para prototipo). En producción precompile Tailwind. -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- PayPal Hosted Buttons SDK -->
+  <script src="https://www.paypal.com/sdk/js?client-id=BAARXfxI462_701jiww4-wpnE7ekgUHOvQHPaZ6odSi6hkBC_LYBjc0QfF6pMoCppXSV2JPVqGR8Wwx58M&components=hosted-buttons&disable-funding=venmo&currency=USD"></script>
   <style>
     /* Colores que combinan con el fondo */
     :root{
@@ -611,12 +613,10 @@
               <select id="recargaMetodo" class="w-full rounded-md bg-transparent border border-white/5 p-2">
                 <option value="yape">Yape</option>
                 <option value="pagoefectivo">Pago Efectivo</option>
-                <option value="paypal">PayPal</option>
                 <option value="usdt">USDT (Criptomoneda)</option>
                 <option value="tarjeta">Tarjeta</option>
+                <option value="paypal">PayPal</option>
               </select>
-              <!-- Contenedor de botones PayPal -->
-              <div id="paypalButtons" class="mt-3 hidden"></div>
               
               <div class="payment-methods">
                 <div class="payment-method">
@@ -627,15 +627,22 @@
                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
                   Pago Efectivo
                 </div>
-                <div class="payment-method">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
-                  PayPal
-                </div>
+
                 <div class="payment-method">
                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M15 9.354a4 4 0 1 0 0 5.292"/></svg>
                   USDT
                 </div>
               </div>
+              
+              <!-- PayPal Hosted Button (se muestra cuando se elige PayPal) -->
+              <div id="paypal-container-XD3GVWKNUD5TS" style="display:none"></div>
+              <script>
+                if(window.paypal && paypal.HostedButtons){
+                  paypal.HostedButtons({
+                    hostedButtonId: "XD3GVWKNUD5TS",
+                  }).render("#paypal-container-XD3GVWKNUD5TS");
+                }
+              </script>
               
               <div class="mt-3">
                 <button id="recargarBtn" type="submit" class="px-4 py-2 rounded-md bg-gradient-to-r from-[#7c4dff] to-[#5ee7df] text-[#001]">Recargar Ahora</button>
@@ -878,29 +885,29 @@
       });
 
       // Recarga
-      $('#recargaMetodo').addEventListener('change', async function(){
-        const method = this.value;
-        const pp = document.getElementById('paypalButtons');
-        const btn = document.getElementById('recargarBtn');
-        if(method === 'paypal'){
-          pp.classList.remove('hidden'); btn.classList.add('hidden');
-          await renderPayPalButtons();
-        } else {
-          pp.classList.add('hidden'); btn.classList.remove('hidden');
-        }
-      });
+      const metodoEl = document.getElementById('recargaMetodo');
+      const recargarBtn = document.getElementById('recargarBtn');
+      const paypalContainer = document.getElementById('paypal-container-XD3GVWKNUD5TS');
+      function updateRecargaUI(){
+        const isPaypal = metodoEl?.value === 'paypal';
+        if(paypalContainer){ paypalContainer.style.display = isPaypal ? 'block' : 'none'; }
+        if(recargarBtn){ recargarBtn.style.display = isPaypal ? 'none' : 'inline-block'; }
+      }
+      metodoEl && metodoEl.addEventListener('change', updateRecargaUI);
+      updateRecargaUI();
 
       $('#formRecarga').addEventListener('submit', function(e){
         e.preventDefault();
         if(!user){ openAuth('login'); showToast('Por favor, inicia sesión o regístrate para continuar.'); return; }
         const method = document.getElementById('recargaMetodo').value;
-        if(method === 'paypal'){
-          // Usar flujo de PayPal (no ejecutar recarga directa)
-          renderPayPalButtons();
-          return;
-        }
         const val = Number($('#recargaMonto').value) || 0;
         if(val <= 0){ showToast('Introduce un monto válido.'); return; }
+        // Si es PayPal, pedimos usar el botón alojado y no modificamos el balance local
+        if(method === 'paypal'){
+          showToast('Usa el botón de PayPal para completar la recarga.');
+          paypalContainer && paypalContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          return;
+        }
         balance = Math.round((balance + val) * 100) / 100;
         localStorage.setItem('servis_balance', balance);
         renderBalance(); showToast(`Recarga de $${fmt(val)} realizada.`);
@@ -999,130 +1006,6 @@
     document.getElementById('empty-orders').style.display = 'none';
   }
 
-      // PayPal (SDK v6): carga dinámica del SDK, instancia y render de botón
-      let paypalLoaded = false;
-      let paypalInstance = null;
-      const paymentSessionOptions = {
-        async onApprove(data){
-          try{
-            const r = await fetch(`/paypal-api/checkout/orders/${data.orderId || data.orderID}/capture`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({}) });
-            const j = await r.json();
-            if(!r.ok){
-              const msg = j?.message || 'Error al capturar el pago PayPal';
-              showToast(msg);
-              return;
-            }
-            showToast('Recarga con PayPal completada. El saldo se actualizará automáticamente.');
-            document.getElementById('recargaMonto').value='';
-          }catch(err){ showToast('PayPal capture: ' + (err?.message || 'error')); }
-        },
-        onCancel(){ showToast('Pago PayPal cancelado.'); },
-        onError(err){ showToast('PayPal: ' + (err?.message || 'error')); }
-      };
-
-      async function loadPayPalSDK(){
-        if(paypalLoaded && paypalInstance) return true;
-        try{
-          const res = await fetch('/api/paypal-config');
-          const cfg = await res.json();
-          if(!cfg.clientId){ showToast('Falta configurar PayPal (clientId).'); return false; }
-          window.__paypalCfg = cfg;
-          const host = cfg.mode === 'live' ? 'https://www.paypal.com' : 'https://www.sandbox.paypal.com';
-          await new Promise((resolve, reject)=>{
-            const s = document.createElement('script');
-            s.src = `${host}/web-sdk/v6/core`;
-            s.async = true;
-            s.onload = ()=> resolve();
-            s.onerror = ()=> reject(new Error('No se pudo cargar PayPal SDK v6'));
-            document.head.appendChild(s);
-          });
-          if(!window.paypal || !window.paypal.createInstance){ showToast('SDK v6 no disponible'); return false; }
-          const tRes = await fetch('/api/paypal-client-token');
-          const tJson = await tRes.json();
-          const clientToken = tJson?.clientToken;
-          if(!tRes.ok || !clientToken){
-            const details = tJson?.tokenError || tJson?.message || 'Falta client token';
-            showToast(`PayPal token: ${details}`);
-            return false;
-          }
-          paypalInstance = await window.paypal.createInstance({ clientToken, components: ['paypal-payments'], pageType: 'checkout' });
-          paypalLoaded = true; return true;
-        }catch(err){ showToast(err.message || 'Error configurando PayPal v6'); return false; }
-      }
-
-      async function renderPayPalButtons(){
-        const ok = await loadPayPalSDK();
-        if(!ok || !paypalInstance){ return; }
-        const container = document.getElementById('paypalButtons');
-        container.innerHTML = '';
-        const amount = Number(document.getElementById('recargaMonto').value) || 0;
-        if(amount <= 0){ showToast('Introduce un monto válido para PayPal.'); return; }
-        // Elegibilidad y configuración de sesión
-        try{
-          const currency = (window.__paypalCfg?.currency || 'USD');
-          const methods = await paypalInstance.findEligibleMethods({ currencyCode: currency });
-          if(!methods.isEligible('paypal')){
-            showToast('PayPal no elegible para tu cuenta/moneda.');
-            return;
-          }
-          const paypalPaymentSession = paypalInstance.createPayPalOneTimePaymentSession(paymentSessionOptions);
-          const createOrderPromise = async ()=>{
-            const r = await fetch('/paypal-api/checkout/orders/create', {
-              method:'POST',
-              headers:{ 'Content-Type':'application/json', 'X-User-Email': (user?.email || '') },
-              body: JSON.stringify({ amount, currency })
-            });
-            const j = await r.json();
-            if(!r.ok){
-              const details = j?.details ? (typeof j.details === 'string' ? j.details : JSON.stringify(j.details)) : '';
-              throw new Error(`[${r.status}] ${j?.message || 'Error creando orden PayPal'} ${details}`.trim());
-            }
-            return { orderId: j.id || j.orderID };
-          };
-          // Renderizar botón PayPal
-          const btn = document.createElement('paypal-button');
-          btn.setAttribute('type','pay');
-          btn.removeAttribute('hidden');
-          container.appendChild(btn);
-          btn.addEventListener('click', async ()=>{
-            try{
-              await paypalPaymentSession.start({ presentationMode: 'auto' }, createOrderPromise());
-            }catch(err){ showToast('PayPal start: ' + (err?.message || 'error')); }
-          });
-
-          // Pay Later
-          if(methods.isEligible('paylater')){
-            const plDetails = methods.getDetails('paylater');
-            const plSession = paypalInstance.createPayLaterOneTimePaymentSession(paymentSessionOptions);
-            const plBtn = document.createElement('paypal-pay-later-button');
-            plBtn.productCode = plDetails.productCode;
-            plBtn.countryCode = plDetails.countryCode;
-            plBtn.removeAttribute('hidden');
-            container.appendChild(plBtn);
-            plBtn.addEventListener('click', async ()=>{
-              try{
-                await plSession.start({ presentationMode: 'auto' }, createOrderPromise());
-              }catch(err){ showToast('Pay Later start: ' + (err?.message || 'error')); }
-            });
-          }
-
-          // PayPal Credit
-          if(methods.isEligible('credit')){
-            const crDetails = methods.getDetails('credit');
-            const crSession = paypalInstance.createPayPalCreditOneTimePaymentSession(paymentSessionOptions);
-            const crBtn = document.createElement('paypal-credit-button');
-            crBtn.countryCode = crDetails.countryCode;
-            crBtn.removeAttribute('hidden');
-            container.appendChild(crBtn);
-            crBtn.addEventListener('click', async ()=>{
-              try{
-                await crSession.start({ presentationMode: 'auto' }, createOrderPromise());
-              }catch(err){ showToast('Credit start: ' + (err?.message || 'error')); }
-            });
-          }
-        }catch(err){ showToast('PayPal eligibility: ' + (err?.message || 'error')); }
-      }
-
       // init
       renderAuth(); renderBalance();
 
@@ -1141,3 +1024,5 @@
   </div>
 </body>
 </html>
+  <!-- PayPal Hosted Buttons SDK -->
+  <script src="https://www.paypal.com/sdk/js?client-id=BAARXfxI462_701jiww4-wpnE7ekgUHOvQHPaZ6odSi6hkBC_LYBjc0QfF6pMoCppXSV2JPVqGR8Wwx58M&components=hosted-buttons&disable-funding=venmo&currency=USD"></script>
