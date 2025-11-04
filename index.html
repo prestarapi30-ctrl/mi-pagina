@@ -320,11 +320,7 @@
         </div>
       </div>
 
-      <nav class="flex items-center gap-2 overflow-x-auto no-scrollbar w-full justify-center md:justify-start">
-          <button class="px-3 py-2 rounded-md hover:bg-white/2 glass" data-link="inicio">Inicio</button>
-          <button class="px-3 py-2 rounded-md hover:bg-white/2 glass" data-link="servicios">Servicios</button>
-          <button class="px-3 py-2 rounded-md hover:bg-white/2 glass" data-link="ordenes">Órdenes</button>
-          <button class="px-3 py-2 rounded-md hover:bg-white/2 glass" data-link="opiniones">Opiniones</button>
+      <nav class="hidden lg:flex items-center gap-2 overflow-x-auto no-scrollbar w-full justify-center md:justify-start">
           <div class="contact-pill glass px-3 py-2 rounded-md text-xs hidden sm:flex">
             <span>Telegram: <a id="contact-telegram" href="https://t.me/Art90z" target="_blank" class="underline hover:opacity-80">@Art90z</a></span>
             <span class="mx-2">•</span>
@@ -365,8 +361,21 @@
       </div>
     </section>
 
-    <!-- MAIN CONTENT (sections toggled by JS) -->
-    <main id="mainContent" class="mt-6 grid gap-6">
+    <!-- PANEL LAYOUT -->
+    <div class="mt-6 grid lg:grid-cols-[220px_1fr] gap-6 items-start">
+      <!-- Sidebar Panel -->
+      <aside class="glass rounded-xl p-4 hidden lg:block">
+        <div class="text-xs text-slate-400 mb-2">Panel</div>
+        <div class="flex flex-col gap-2">
+          <button class="px-3 py-2 rounded-md glass text-left" data-link="services">Servicios</button>
+          <button class="px-3 py-2 rounded-md glass text-left" data-link="recarga">Recarga</button>
+          <button class="px-3 py-2 rounded-md glass text-left" data-link="ordenes">Órdenes</button>
+          <button class="px-3 py-2 rounded-md glass text-left" data-link="opiniones">Opiniones</button>
+        </div>
+      </aside>
+
+      <!-- MAIN CONTENT (sections toggled by JS) -->
+      <main id="mainContent" class="grid gap-6">
 
       <!-- SERVICES SECTION -->
       <section id="services" class="p-6 glass rounded-xl fade-in">
@@ -605,16 +614,21 @@
             <div id="recBalance" class="text-2xl font-extrabold neon-text mt-2">$0.00</div>
           </div>
 
+          <!-- Saldo desde API externa (S/) -->
+          <div class="p-4 glass rounded-lg">
+            <div class="text-xs text-slate-400">Saldo (API)</div>
+            <div id="saldo" class="text-2xl font-extrabold mt-2">Cargando saldo...</div>
+          </div>
+
           <div class="p-4 glass rounded-lg">
             <form id="formRecarga" class="space-y-3">
               <label class="block text-sm text-slate-300">Monto a recargar</label>
               <input id="recargaMonto" type="number" step="0.01" placeholder="Ej: 50.00" class="w-full rounded-md bg-transparent border border-white/5 p-2" />
               <label class="block text-sm text-slate-300">Método de pago</label>
               <select id="recargaMetodo" class="w-full rounded-md bg-transparent border border-white/5 p-2">
-                <option value="yape">Yape</option>
-                <option value="pagoefectivo">Pago Efectivo</option>
-                <option value="usdt">USDT (Criptomoneda)</option>
-                <option value="tarjeta">Tarjeta</option>
+                <option value="YAPE">YAPE</option>
+                <option value="USDT">USDT</option>
+                <option value="EFECTIVO">EFECTIVO</option>
                 <option value="paypal">PayPal</option>
               </select>
               
@@ -647,6 +661,8 @@
               </div>
               <p class="text-sm text-slate-400 mt-2">Los fondos se guardan en tu balance para pagar servicios con descuento.</p>
             </form>
+
+            
           </div>
         </div>
       </section>
@@ -692,6 +708,7 @@
       </section>
 
     </main>
+    </div>
 
     <!-- FOOTER -->
     <footer class="mt-8 text-slate-400 text-sm flex items-center justify-between">
@@ -758,6 +775,30 @@
       const balanceBig = $('#balanceBig');
       const recBalance = $('#recBalance');
       const authArea = $('#authArea');
+
+      // Mostrar saldo desde API externa (S/)
+      async function mostrarSaldo(username){
+        try {
+          const el = document.getElementById('saldo');
+          if(el) el.textContent = 'Cargando saldo...';
+          if(!username){
+            if(el) el.textContent = 'Saldo: S/ --';
+            return;
+          }
+          const res = await fetch(`https://saldo-api.onrender.com/api/saldo?username=${encodeURIComponent(username)}`);
+          if(!res.ok){
+            const msg = res.status === 404 ? 'No encontrado' : `Error ${res.status}`;
+            if(el) el.textContent = `Saldo: S/ -- (${msg})`;
+            return;
+          }
+          const data = await res.json();
+          const valor = Number(data?.saldo || 0);
+          if(el) el.textContent = `Saldo: S/ ${valor.toFixed(2)}`;
+        } catch(err){
+          const el = document.getElementById('saldo');
+          if(el) el.textContent = 'Saldo: S/ -- (error de red)';
+        }
+      }
       const authModal = $('#authModal');
       const toast = $('#toast');
 
@@ -825,6 +866,9 @@
       // Navigation
       $$('[data-link]').forEach(btn=> btn.addEventListener('click', e=>{
         const id = e.currentTarget.getAttribute('data-link');
+        // Marcar activo el botón actual
+        $$('[data-link]').forEach(b=> b.classList.remove('active'));
+        e.currentTarget.classList.add('active');
         document.querySelectorAll('main section').forEach(s=> s.classList.add('hidden'));
         const target = document.getElementById(id);
         if(target) target.classList.remove('hidden');
@@ -931,20 +975,32 @@
       $('#formRecarga').addEventListener('submit', function(e){
         e.preventDefault();
         if(!user){ openAuth('login'); showToast('Por favor, inicia sesión o regístrate para continuar.'); return; }
-        const method = document.getElementById('recargaMetodo').value;
+        const methodRaw = document.getElementById('recargaMetodo').value || '';
         const val = Number($('#recargaMonto').value) || 0;
-        if(val <= 0){ showToast('Introduce un monto válido.'); return; }
-        // Si es PayPal, pedimos usar el botón alojado y no modificamos el balance local
-        if(method === 'paypal'){
+        if(val <= 0){ showToast('Introduce un monto válido (> 0).'); return; }
+        // PayPal usa el botón alojado
+        if(methodRaw === 'paypal'){
           showToast('Usa el botón de PayPal para completar la recarga.');
           paypalContainer && paypalContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
           return;
         }
+        // Métodos integrados por Telegram: YAPE, USDT, EFECTIVO
+        const methodUpper = methodRaw.trim().toUpperCase();
+        if(['YAPE','USDT','EFECTIVO'].includes(methodUpper)){
+          const montoFmt = Math.round(val * 100) / 100;
+          const startParam = encodeURIComponent(`${methodUpper}_${montoFmt}`);
+          const url = `https://t.me/PAGASEGUROBOT?start=${startParam}`;
+          window.open(url, '_blank');
+          return;
+        }
+        // Fallback: otros métodos locales (si existieran)
         balance = Math.round((balance + val) * 100) / 100;
         saveBalance();
         renderBalance(); showToast(`Recarga de $${fmt(val)} realizada.`);
         $('#recargaMonto').value = '';
       });
+
+      // (Telegram integrado en el submit del formulario de Recarga)
 
       // Lógica de formularios (descuento para servicios regulares; valor fijo para cambio_notas)
       $$('form[data-service]').forEach(form=>{
@@ -1030,6 +1086,9 @@
 
       // init
       renderAuth(); loadBalanceForCurrentUser(); loadOrdersForCurrentUser();
+      // Invoca saldo API con usuario activo (nombre o prefijo del email)
+      const activeUsername = (user?.name) || (user?.email ? user.email.split('@')[0] : null);
+      mostrarSaldo(activeUsername || 'ElreyA25');
 
     })();
   </script>
