@@ -1,0 +1,9 @@
+{
+  "name": "servis_web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SERVIS web with Netlify Functions and PayPal integration",
+  "dependencies": {
+    "@netlify/blobs": "^5.0.0"
+  }
+}

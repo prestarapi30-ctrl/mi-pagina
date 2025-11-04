@@ -1,0 +1,38 @@
+## Configuración mínima válida de Netlify
+
+[build]
+  # Publica el root del proyecto (index.html está en la raíz)
+  publish = "."
+
+[build.environment]
+  # Fija versión de Node para funciones (fetch nativo)
+  NODE_VERSION = "18"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/paypal-api/checkout/orders/create"
+  to = "/.netlify/functions/paypal-create"
+  status = 200
+
+[[redirects]]
+  from = "/paypal-api/checkout/orders/:orderId/capture"
+  to = "/.netlify/functions/paypal-capture?orderId=:orderId"
+  status = 200
+
+[[redirects]]
+  from = "/auth/register"
+  to = "/.netlify/functions/auth-register"
+  status = 200
+
+[[redirects]]
+  from = "/auth/login"
+  to = "/.netlify/functions/auth-login"
+  status = 200
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
