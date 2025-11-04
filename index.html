@@ -337,10 +337,7 @@
           <div class="text-xs text-slate-400">Saldo</div>
           <div id="balance" class="font-bold">$0.00</div>
         </div>
-        <div id="authArea" class="flex items-center gap-2">
-          <button id="btnLogin" class="px-3 py-2 rounded-md bg-gradient-to-r from-[#7c4dff]/90 to-[#5ee7df]/90 text-[#001] btn-neon">Iniciar sesión</button>
-          <button id="btnRegister" class="px-3 py-2 rounded-md border border-white/5">Registrarme</button>
-        </div>
+        <div id="authArea" class="flex items-center gap-2"></div>
       </div>
     </header>
 
@@ -380,6 +377,32 @@
 
       <!-- MAIN CONTENT (sections toggled by JS) -->
       <main id="mainContent" class="grid gap-6">
+
+      <!-- AUTH SIMPLE SECTION (API externa) -->
+      <section id="authSimple" class="fixed bottom-6 right-6 z-40 w-[320px]">
+        <div class="glass p-4 rounded-xl shadow-xl">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-base font-bold">Autenticación (API externa)</h3>
+            <div class="flex gap-1" role="tablist" aria-label="Modo de autenticación">
+              <button id="authTabLogin" class="px-3 py-1 rounded-md glass" data-auth-tab="login">Login</button>
+              <button id="authTabRegister" class="px-3 py-1 rounded-md btn-ghost" data-auth-tab="register">Registro</button>
+            </div>
+          </div>
+          <div id="authLogin" class="block">
+            <input id="username" placeholder="Usuario" class="w-full rounded-md bg-transparent border border-white/5 p-2" />
+            <input id="password" type="password" placeholder="Contraseña" class="w-full rounded-md bg-transparent border border-white/5 p-2 mt-2" />
+            <button type="button" onclick="login()" class="mt-3 w-full px-4 py-2 rounded-md bg-gradient-to-r from-[#7c4dff] to-[#5ee7df] text-[#001]">Ingresar</button>
+          </div>
+          <div id="authRegister" class="hidden">
+            <input id="regEmail" type="email" placeholder="Correo" class="w-full rounded-md bg-transparent border border-white/5 p-2" />
+            <input id="regPhone" type="tel" placeholder="Teléfono" class="w-full rounded-md bg-transparent border border-white/5 p-2 mt-2" />
+            <input id="regName" placeholder="Nombres" class="w-full rounded-md bg-transparent border border-white/5 p-2 mt-2" />
+            <input id="newuser" placeholder="Usuario" class="w-full rounded-md bg-transparent border border-white/5 p-2 mt-2" />
+            <input id="newpass" type="password" placeholder="Contraseña" class="w-full rounded-md bg-transparent border border-white/5 p-2 mt-2" />
+            <button type="button" onclick="registrar()" class="mt-3 w-full px-4 py-2 rounded-md bg-gradient-to-r from-[#7c4dff] to-[#5ee7df] text-[#001]">Registrar</button>
+          </div>
+        </div>
+      </section>
 
       <!-- SERVICES SECTION -->
       <section id="services" class="p-6 glass rounded-xl fade-in">
@@ -619,7 +642,7 @@
           </div>
 
           <!-- Saldo desde API externa (S/) -->
-          <div class="p-4 glass rounded-lg">
+          <div id="saldoApiBox" class="p-4 glass rounded-lg">
             <div class="text-xs text-slate-400">Saldo (API)</div>
             <p class="text-2xl font-extrabold mt-2 high-contrast">Tu saldo: S/ <span id="saldo">0.00</span></p>
           </div>
@@ -666,18 +689,8 @@
               <p class="text-sm text-slate-400 mt-2">Los fondos se guardan en tu balance para pagar servicios con descuento.</p>
             </form>
 
-            <!-- Registro/Login simples (API externa) -->
-            <div class="mt-6 border-t border-white/5 pt-4 space-y-3">
-              <h2 class="label-contrast text-base font-semibold">Registro</h2>
-              <input id="newuser" placeholder="Usuario" class="w-full rounded-md bg-transparent border border-white/5 p-2" />
-              <input id="newpass" type="password" placeholder="Contraseña" class="w-full rounded-md bg-transparent border border-white/5 p-2" />
-              <button type="button" onclick="registrar()" class="px-4 py-2 rounded-md bg-gradient-to-r from-[#7c4dff] to-[#5ee7df] text-[#001]">Registrar</button>
+            
 
-              <h2 class="label-contrast text-base font-semibold mt-6">Login</h2>
-              <input id="username" placeholder="Usuario" class="w-full rounded-md bg-transparent border border-white/5 p-2" />
-              <input id="password" type="password" placeholder="Contraseña" class="w-full rounded-md bg-transparent border border-white/5 p-2" />
-              <button type="button" onclick="login()" class="px-4 py-2 rounded-md bg-gradient-to-r from-[#7c4dff] to-[#5ee7df] text-[#001]">Ingresar</button>
-            </div>
 
           
           </div>
@@ -796,11 +809,12 @@
       // Base de API externa
       const API_BASE = 'https://<tu-servicio>.onrender.com';
 
-      // Mostrar saldo desde API externa (S/)
+      // Mostrar saldo desde API externa (S/) usando el usuario del bloque de Recarga
       async function actualizarSaldo(){
         const el = document.getElementById('saldo');
         try {
-          const username = localStorage.getItem('username');
+          const unameInput = document.getElementById('username');
+          const username = (unameInput?.value || '').trim();
           if(!username){ if(el) el.textContent = '0.00'; return; }
           const res = await fetch(`${API_BASE}/api/saldo?username=${encodeURIComponent(username)}`);
           const data = await res.json();
@@ -814,6 +828,8 @@
       }
       const authModal = $('#authModal');
       const toast = $('#toast');
+      // Flag de autenticación API (sin sesión local)
+      window.apiAuthReady = false;
 
       // Storage helpers por usuario
       function userId(){ return (user?.email || '').toLowerCase(); }
@@ -823,15 +839,13 @@
       function saveBalance(){ localStorage.setItem(balanceKey(), balance); }
 
       function renderAuth(){
-        if(user){
-          authArea.innerHTML = `<div class="text-sm mr-2">${user.name || user.email}</div><button id="btnLogout" class="px-3 py-2 rounded-md glass">Cerrar</button>`;
-          $('#btnLogout').addEventListener('click', () => { user=null; localStorage.removeItem('servis_user'); balance=0; renderAuth(); renderBalance(); renderOrders([]); showToast('Has cerrado sesión.'); });
-        } else {
-          authArea.innerHTML = `<button id="btnLogin" class="px-3 py-2 rounded-md bg-gradient-to-r from-[#7c4dff]/90 to-[#5ee7df]/90 text-[#001] btn-neon">Iniciar sesión</button><button id="btnRegister" class="px-3 py-2 rounded-md border border-white/5">Registrarme</button>`;
-          $('#btnLogin').addEventListener('click', ()=> openAuth('login'));
-          $('#btnRegister').addEventListener('click', ()=> openAuth('register'));
-        }
+        // No mostrar controles de autenticación en el encabezado.
+        // El único registro/login disponible está en el bloque al inicio del panel.
+        authArea.innerHTML = '';
         updateProtectedSections();
+        // Asegurar visibilidad del widget mientras no haya autenticación
+        const authWidget = document.getElementById('authSimple');
+        if(authWidget && !window.apiAuthReady){ authWidget.classList.remove('hidden'); }
       }
 
       function renderBalance(){
@@ -845,6 +859,18 @@
         setTimeout(()=> toast.classList.add('hidden'),3500);
       }
 
+      // Pedir autenticación: resalta y desplaza a la sección única
+      function requireApiAuth(actionLbl='continuar'){
+        showToast(`Para ${actionLbl}, inicia sesión o regístrate.`);
+        const section = document.getElementById('authSimple');
+        if(section){
+          section.scrollIntoView({ behavior:'smooth', block:'start' });
+          const prev = section.style.boxShadow;
+          section.style.boxShadow = '0 0 0 2px #5ee7df, 0 0 12px #5ee7df';
+          setTimeout(()=> { section.style.boxShadow = prev; }, 1500);
+        }
+      }
+
       function openAuth(mode='login'){
         authModal.classList.remove('hidden');
         $('#formRegister').classList.toggle('hidden', mode !== 'register');
@@ -852,16 +878,16 @@
       }
       function closeAuth(){ authModal.classList.add('hidden'); }
 
-      // Ocultar/mostrar UI dependiente de sesión
+      // Ocultar Recarga y saldos hasta autenticación API
       function updateProtectedSections(){
-        const isLogged = !!user;
-        balanceEl && balanceEl.classList.toggle('hidden', !isLogged);
-        balanceBig && balanceBig.classList.toggle('hidden', !isLogged);
+        const isAuth = !!window.apiAuthReady;
         const recargaSection = document.getElementById('recarga');
-        if(recargaSection){
-          // Si no hay sesión, mantener la sección oculta
-          recargaSection.classList.toggle('hidden', !isLogged);
-        }
+        if(recargaSection){ recargaSection.classList.toggle('hidden', !isAuth); }
+        balanceEl && balanceEl.classList.toggle('hidden', !isAuth);
+        balanceBig && balanceBig.classList.toggle('hidden', !isAuth);
+        recBalance && recBalance.classList.toggle('hidden', !isAuth);
+        const saldoApi = document.getElementById('saldo');
+        saldoApi && saldoApi.parentElement?.classList.toggle('hidden', !isAuth);
       }
 
       // Órdenes: render y carga desde storage por usuario
@@ -892,26 +918,23 @@
       // Navigation
       $$('[data-link]').forEach(btn=> btn.addEventListener('click', e=>{
         const id = e.currentTarget.getAttribute('data-link');
-        // Bloquear navegación a Recarga si no hay sesión
-        if(id === 'recarga' && !user){
-          openAuth('login');
-          showToast('Por favor, inicia sesión o regístrate para continuar.');
-          return;
-        }
-        // Marcar activo el botón actual
+        // Bloquear Recarga si no autenticado
+        if(id === 'recarga' && !window.apiAuthReady){ requireApiAuth('recargar fondos'); return; }
+        // Navegación
         $$('[data-link]').forEach(b=> b.classList.remove('active'));
         e.currentTarget.classList.add('active');
-        document.querySelectorAll('main section').forEach(s=> s.classList.add('hidden'));
+        document.querySelectorAll('main section:not(#authSimple)').forEach(s=> s.classList.add('hidden'));
         const target = document.getElementById(id);
         if(target) target.classList.remove('hidden');
         else document.getElementById('services').classList.remove('hidden');
+        const authWidget = document.getElementById('authSimple');
+        if(authWidget && !window.apiAuthReady){ authWidget.classList.remove('hidden'); }
         window.scrollTo({top:160, behavior:'smooth'});
       }));
 
       // Acquire CTA
       $$('[data-action="buy"]').forEach(b=> b.addEventListener('click', ()=>{
-        // if not logged in, prompt
-        if(!user){ openAuth('login'); showToast('Por favor, inicia sesión o regístrate para continuar.'); return; }
+        if(!window.apiAuthReady){ requireApiAuth('usar servicios'); return; }
         document.getElementById('services').classList.remove('hidden'); window.scrollTo({top:600, behavior:'smooth'});
       }));
 
@@ -920,76 +943,16 @@
       $('#toLogin').addEventListener('click', ()=>{ $('#formRegister').classList.add('hidden'); $('#formLogin').classList.remove('hidden'); });
       $('#toRegister').addEventListener('click', ()=>{ $('#formLogin').classList.add('hidden'); $('#formRegister').classList.remove('hidden'); });
 
-      // Registro (modo estático: localStorage)
-      $('#formRegister').addEventListener('submit', async function(e){
+      // Handlers locales del modal (submit) sin integración de sesión/UI
+      const formRegisterEl = document.getElementById('formRegister');
+      const formLoginEl = document.getElementById('formLogin');
+      formRegisterEl && formRegisterEl.addEventListener('submit', (e)=>{
         e.preventDefault();
-        const f = new FormData(e.target);
-        const name = (f.get('name')||'').trim();
-        const email = (f.get('email')||'').trim();
-        const phone = (f.get('phone')||'').trim();
-        const password = (f.get('password')||'').trim();
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if(!name||!email||!password){ showToast('Completa los campos obligatorios.'); return; }
-        if(!emailRegex.test(email)){ showToast('Formato de correo inválido.'); return; }
-        if(password.length < 8){ showToast('La contraseña debe tener al menos 8 caracteres.'); return; }
-        const btn = e.target.querySelector('button[type="submit"]');
-        const originalText = btn.textContent; btn.classList.add('is-loading'); btn.textContent = 'Registrando...';
-        try {
-          const users = JSON.parse(localStorage.getItem('servis_users')||'[]');
-          const exists = users.some(u=> (u.email||'').toLowerCase() === email.toLowerCase());
-          if(exists){ showToast('El correo ya está registrado.'); return; }
-          users.push({ name, email, phone, password });
-          localStorage.setItem('servis_users', JSON.stringify(users));
-          user = { name, email };
-          localStorage.setItem('servis_user', JSON.stringify(user));
-          renderAuth(); loadBalanceForCurrentUser(); loadOrdersForCurrentUser(); closeAuth(); showToast(`Bienvenido, ${name}!`);
-          e.target.reset();
-        } finally {
-          btn.classList.remove('is-loading'); btn.textContent = originalText;
-        }
+        showToast('Registro modal local. Usa el bloque de Recarga para API externa.');
       });
-
-      // Login (modo estático: localStorage)
-      $('#formLogin').addEventListener('submit', async function(e){
+      formLoginEl && formLoginEl.addEventListener('submit', (e)=>{
         e.preventDefault();
-        const f = new FormData(e.target);
-        const email = (f.get('email')||'').trim();
-        const password = (f.get('password')||'').trim();
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if(!email||!password){ showToast('Correo y contraseña requeridos.'); return; }
-        if(!emailRegex.test(email)){ showToast('Formato de correo inválido.'); return; }
-        const btn = e.target.querySelector('button[type="submit"]');
-        const originalText = btn.textContent; btn.classList.add('is-loading'); btn.textContent = 'Ingresando...';
-        try {
-          const users = JSON.parse(localStorage.getItem('servis_users')||'[]');
-          const found = users.find(u=> (u.email||'').toLowerCase() === email.toLowerCase());
-          if(!found){
-            showToast('No existe una cuenta con ese correo.');
-            // Ofrecer registrarse con el mismo correo
-            setTimeout(()=>{
-              const goRegister = confirm('No encontramos tu cuenta. ¿Deseas registrarte con este correo?');
-              if(goRegister){
-                $('#formLogin').classList.add('hidden');
-                $('#formRegister').classList.remove('hidden');
-                const regEmail = document.querySelector('#formRegister input[name="email"]');
-                const regPass = document.querySelector('#formRegister input[name="password"]');
-                regEmail && (regEmail.value = email);
-                regPass && (regPass.value = password);
-                const regName = document.querySelector('#formRegister input[name="name"]');
-                regName && regName.focus();
-              }
-            }, 50);
-            return;
-          }
-          if(found.password !== password){ showToast('Contraseña incorrecta.'); return; }
-          const name = found.name || (email.split('@')[0]);
-          user = { name, email };
-          localStorage.setItem('servis_user', JSON.stringify(user));
-          renderAuth(); loadBalanceForCurrentUser(); loadOrdersForCurrentUser(); closeAuth(); showToast(`Hola ${name}, sesión iniciada.`);
-          e.target.reset();
-        } finally {
-          btn.classList.remove('is-loading'); btn.textContent = originalText;
-        }
+        showToast('Login modal local. Usa el bloque de Recarga para API externa.');
       });
 
       // Recarga
@@ -1006,7 +969,7 @@
 
       $('#formRecarga').addEventListener('submit', function(e){
         e.preventDefault();
-        if(!user){ openAuth('login'); showToast('Por favor, inicia sesión o regístrate para continuar.'); return; }
+        if(!window.apiAuthReady){ requireApiAuth('recargar fondos'); return; }
         const methodRaw = document.getElementById('recargaMetodo').value || '';
         const val = Number($('#recargaMonto').value) || 0;
         if(val <= 0){ showToast('Introduce un monto válido (> 0).'); return; }
@@ -1032,17 +995,22 @@
         $('#recargaMonto').value = '';
       });
 
-      // Registro/Login simples (API externa) expuestos globalmente
+      // Registro/Login simples (API externa) expuestos globalmente (sin sesión local)
       window.registrar = async function registrar(){
-        const username = document.getElementById('newuser')?.value;
-        const password = document.getElementById('newpass')?.value;
+        const email = (document.getElementById('regEmail')?.value || '').trim();
+        const phone = (document.getElementById('regPhone')?.value || '').trim();
+        const names = (document.getElementById('regName')?.value || '').trim();
+        const username = (document.getElementById('newuser')?.value || '').trim();
+        const password = (document.getElementById('newpass')?.value || '').trim();
+        if(!email || !phone || !names || !username || !password){ showToast('Completa correo, teléfono, nombres, usuario y contraseña.'); return; }
         try{
           const res = await fetch(`${API_BASE}/api/registro`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password })
+            body: JSON.stringify({ email, phone, names, username, password })
           });
           const data = await res.json();
+          if(data?.success){ window.apiAuthReady = true; updateProtectedSections(); showToast('Registro exitoso. Autenticación lista.'); }
           alert(JSON.stringify(data));
         } catch(err){
           alert(JSON.stringify({ error: 'Network error', detail: String(err) }));
@@ -1050,8 +1018,8 @@
       };
 
       window.login = async function login(){
-        const username = document.getElementById('username')?.value;
-        const password = document.getElementById('password')?.value;
+        const username = (document.getElementById('username')?.value || '').trim();
+        const password = (document.getElementById('password')?.value || '').trim();
         try{
           const res = await fetch(`${API_BASE}/api/login`, {
             method: 'POST',
@@ -1059,15 +1027,32 @@
             body: JSON.stringify({ username, password })
           });
           const data = await res.json();
-          if(data?.success){
-            localStorage.setItem('username', username);
-            actualizarSaldo();
-          }
+          if(data?.success){ window.apiAuthReady = true; updateProtectedSections(); showToast('Sesión iniciada. Autenticación lista.'); }
           alert(JSON.stringify(data));
         } catch(err){
           alert(JSON.stringify({ error: 'Network error', detail: String(err) }));
         }
       };
+
+      // Toggle Login/Registro (solo uno visible) en el widget fijo
+      (function setupAuthTabs(){
+        const tabLogin = document.getElementById('authTabLogin');
+        const tabRegister = document.getElementById('authTabRegister');
+        const panelLogin = document.getElementById('authLogin');
+        const panelRegister = document.getElementById('authRegister');
+        function activate(mode){
+          const isLogin = mode === 'login';
+          panelLogin?.classList.toggle('hidden', !isLogin);
+          panelLogin?.classList.toggle('block', isLogin);
+          panelRegister?.classList.toggle('hidden', isLogin);
+          panelRegister?.classList.toggle('block', !isLogin);
+          tabLogin?.classList.toggle('btn-ghost', !isLogin);
+          tabRegister?.classList.toggle('btn-ghost', isLogin);
+        }
+        tabLogin?.addEventListener('click', ()=>activate('login'));
+        tabRegister?.addEventListener('click', ()=>activate('register'));
+        activate('login');
+      })();
 
       // Exponer actualizarSaldo globalmente para window.onload si se desea
       window.actualizarSaldo = actualizarSaldo;
@@ -1099,7 +1084,7 @@
 
         // Botón Generar Orden con validaciones de sesión y saldo
         form.querySelectorAll('[data-pay]').forEach(btn=> btn.addEventListener('click', ()=>{
-          if(!user){ openAuth('login'); showToast('Por favor, inicia sesión o regístrate para continuar.'); return; }
+          if(!window.apiAuthReady){ requireApiAuth('generar una orden'); return; }
           const amount = Number(amt?.value) || 0;
           if(amount <= 0){ showToast('Introduce un monto válido.'); return; }
           let total = amount;
