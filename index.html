@@ -338,6 +338,10 @@
           <div id="balance" class="font-bold">$0.00</div>
         </div>
         <div id="authArea" class="flex items-center gap-2"></div>
+        <div id="currentUserBadge" class="glass px-3 py-2 rounded-md text-xs hidden">
+          <span class="text-slate-400">Usuario</span>
+          <span id="currentUserName" class="font-semibold ml-1"></span>
+        </div>
       </div>
     </header>
 
@@ -805,6 +809,8 @@
       const balanceBig = $('#balanceBig');
       const recBalance = $('#recBalance');
       const authArea = $('#authArea');
+      const userBadge = $('#currentUserBadge');
+      const userNameEl = $('#currentUserName');
 
       // Base de API externa (local Flask)
       const API_BASE = 'http://127.0.0.1:5001';
@@ -848,7 +854,14 @@
         updateProtectedSections();
         // Asegurar visibilidad del widget mientras no haya autenticación
         const authWidget = document.getElementById('authSimple');
-        if(authWidget && !window.apiAuthReady){ authWidget.classList.remove('hidden'); }
+        if(authWidget){
+          if(!window.apiAuthReady){ authWidget.classList.remove('hidden'); }
+          else { authWidget.classList.add('hidden'); }
+        }
+        // Mostrar badge de usuario si hay sesión
+        const uname = localStorage.getItem('servis_username') || '';
+        if(uname){ userBadge?.classList.remove('hidden'); if(userNameEl) userNameEl.textContent = uname; }
+        else { userBadge?.classList.add('hidden'); }
       }
 
       function renderBalance(){
@@ -990,7 +1003,10 @@
             const resp = await fetch(`${API_BASE}/api/solicitar_recarga`, { method: 'POST', headers, body: JSON.stringify({ metodo: methodUpper, monto: val }) });
             const data = await resp.json();
             if(resp.ok && data?.ok){
-              if(data.deep_link){ window.open(data.deep_link, '_blank'); }
+              const montoFmt = Math.round(val * 100) / 100;
+              const startParam = encodeURIComponent(`${methodUpper}_${montoFmt}`);
+              const fallbackBot = `https://t.me/PAGASEGUROBOT?start=${startParam}`;
+              window.open(data.deep_link || fallbackBot, '_blank');
               showToast('Solicitud enviada. Revisa el bot de Telegram.');
               $('#recargaMonto').value = '';
               return;
@@ -1016,8 +1032,9 @@
           const data = await res.json();
           if(res.ok && data?.token){
             localStorage.setItem('servis_token', data.token);
+            localStorage.setItem('servis_username', username);
             window.apiAuthReady = true; updateProtectedSections(); showToast('Registro exitoso. Sesión iniciada.');
-            actualizarSaldo();
+            actualizarSaldo(); renderAuth();
           } else { showToast(data?.error || 'Error de registro'); }
         } catch(err){ showToast('Error de red en registro'); }
       };
@@ -1030,8 +1047,9 @@
           const data = await res.json();
           if(res.ok && data?.token){
             localStorage.setItem('servis_token', data.token);
+            localStorage.setItem('servis_username', username);
             window.apiAuthReady = true; updateProtectedSections(); showToast('Sesión iniciada.');
-            actualizarSaldo();
+            actualizarSaldo(); renderAuth();
           } else { showToast(data?.error || 'Login inválido'); }
         } catch(err){ showToast('Error de red en login'); }
       };
