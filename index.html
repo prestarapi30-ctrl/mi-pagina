@@ -7,7 +7,7 @@
 
   <!-- Tailwind CDN (rápido para prototipo). En producción precompile Tailwind. -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- PayPal Hosted Buttons SDK -->
+  <!-- PayPal Hosted Buttons SDK (reemplazado según Parte 1) -->
   <script src="https://www.paypal.com/sdk/js?client-id=BAARXfxI462_701jiww4-wpnE7ekgUHOvQHPaZ6odSi6hkBC_LYBjc0QfF6pMoCppXSV2JPVqGR8Wwx58M&components=hosted-buttons&disable-funding=venmo&currency=USD"></script>
   <style>
     /* Colores que combinan con el fondo */
@@ -634,14 +634,12 @@
                 </div>
               </div>
               
-              <!-- PayPal Hosted Button (se muestra cuando se elige PayPal) -->
-              <div id="paypal-container-XD3GVWKNUD5TS" style="display:none"></div>
+              <!-- PayPal Hosted Button (Parte 2, reemplazado con nuevo ID) -->
+              <div id="paypal-container-CPCSKSXGBM3DN" style="display:none"></div>
               <script>
-                if(window.paypal && paypal.HostedButtons){
-                  paypal.HostedButtons({
-                    hostedButtonId: "XD3GVWKNUD5TS",
-                  }).render("#paypal-container-XD3GVWKNUD5TS");
-                }
+                paypal.HostedButtons({
+                  hostedButtonId: "CPCSKSXGBM3DN",
+                }).render("#paypal-container-CPCSKSXGBM3DN")
               </script>
               
               <div class="mt-3">
@@ -753,7 +751,7 @@
 
       // State
       let user = JSON.parse(localStorage.getItem('servis_user') || 'null');
-      let balance = Number(localStorage.getItem('servis_balance') || 0);
+      let balance = 0;
 
       // Elements
       const balanceEl = $('#balance');
@@ -763,10 +761,17 @@
       const authModal = $('#authModal');
       const toast = $('#toast');
 
+      // Storage helpers por usuario
+      function userId(){ return (user?.email || '').toLowerCase(); }
+      function balanceKey(){ const id = userId(); return id ? `servis_balance_${id}` : 'servis_balance'; }
+      function ordersKey(){ const id = userId(); return id ? `servis_orders_${id}` : 'servis_orders'; }
+      function loadBalanceForCurrentUser(){ balance = Number(localStorage.getItem(balanceKey()) || 0); renderBalance(); }
+      function saveBalance(){ localStorage.setItem(balanceKey(), balance); }
+
       function renderAuth(){
         if(user){
           authArea.innerHTML = `<div class="text-sm mr-2">${user.name || user.email}</div><button id="btnLogout" class="px-3 py-2 rounded-md glass">Cerrar</button>`;
-          $('#btnLogout').addEventListener('click', () => { user=null; localStorage.removeItem('servis_user'); renderAuth(); showToast('Has cerrado sesión.'); });
+          $('#btnLogout').addEventListener('click', () => { user=null; localStorage.removeItem('servis_user'); balance=0; renderAuth(); renderBalance(); renderOrders([]); showToast('Has cerrado sesión.'); });
         } else {
           authArea.innerHTML = `<button id="btnLogin" class="px-3 py-2 rounded-md bg-gradient-to-r from-[#7c4dff]/90 to-[#5ee7df]/90 text-[#001] btn-neon">Iniciar sesión</button><button id="btnRegister" class="px-3 py-2 rounded-md border border-white/5">Registrarme</button>`;
           $('#btnLogin').addEventListener('click', ()=> openAuth('login'));
@@ -792,6 +797,31 @@
       }
       function closeAuth(){ authModal.classList.add('hidden'); }
 
+      // Órdenes: render y carga desde storage por usuario
+      function renderOrders(list){
+        const container = document.querySelector('.orders-list');
+        if(!container) return;
+        if(!Array.isArray(list) || list.length === 0){
+          container.innerHTML = '<div class="text-center py-4 opacity-70" id="empty-orders">No hay órdenes generadas aún</div>';
+          return;
+        }
+        container.innerHTML = list.map(o => `
+      <div class="order-item" id="${o.id}">
+        <div>
+          <div class="font-semibold">${o.servicio}</div>
+          <div class="text-sm opacity-80">Monto: ${o.currency}${o.monto} • ${o.date}</div>
+        </div>
+        <div class="order-status status-${o.status}">
+          ${o.status === 'pending' ? 'Pendiente' : o.status === 'processing' ? 'Procesando' : 'Completado'}
+        </div>
+      </div>
+    `).join('');
+      }
+      function loadOrdersForCurrentUser(){
+        const list = JSON.parse(localStorage.getItem(ordersKey()) || '[]');
+        renderOrders(list);
+      }
+
       // Navigation
       $$('[data-link]').forEach(btn=> btn.addEventListener('click', e=>{
         const id = e.currentTarget.getAttribute('data-link');
@@ -814,7 +844,7 @@
       $('#toLogin').addEventListener('click', ()=>{ $('#formRegister').classList.add('hidden'); $('#formLogin').classList.remove('hidden'); });
       $('#toRegister').addEventListener('click', ()=>{ $('#formLogin').classList.add('hidden'); $('#formRegister').classList.remove('hidden'); });
 
-      // Register (Netlify Functions)
+      // Registro (modo estático: localStorage)
       $('#formRegister').addEventListener('submit', async function(e){
         e.preventDefault();
         const f = new FormData(e.target);
@@ -829,28 +859,21 @@
         const btn = e.target.querySelector('button[type="submit"]');
         const originalText = btn.textContent; btn.classList.add('is-loading'); btn.textContent = 'Registrando...';
         try {
-          const res = await fetch('/auth/register', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, email, password })
-          });
-          const data = await res.json().catch(()=>({}));
-          if(res.ok && data?.ok){
-            user = { name: data.user?.name || name, email: data.user?.email || email, phone };
-            localStorage.setItem('servis_user', JSON.stringify(user));
-            renderAuth(); closeAuth(); showToast(data.message || `Bienvenido, ${user.name}!`);
-            e.target.reset();
-          } else {
-            showToast(data?.message || 'No se pudo registrar.');
-          }
-        } catch(err){
-          showToast('Error de red. Ejecuta en Netlify para probar registro.');
+          const users = JSON.parse(localStorage.getItem('servis_users')||'[]');
+          const exists = users.some(u=> (u.email||'').toLowerCase() === email.toLowerCase());
+          if(exists){ showToast('El correo ya está registrado.'); return; }
+          users.push({ name, email, phone, password });
+          localStorage.setItem('servis_users', JSON.stringify(users));
+          user = { name, email };
+          localStorage.setItem('servis_user', JSON.stringify(user));
+          renderAuth(); loadBalanceForCurrentUser(); loadOrdersForCurrentUser(); closeAuth(); showToast(`Bienvenido, ${name}!`);
+          e.target.reset();
         } finally {
           btn.classList.remove('is-loading'); btn.textContent = originalText;
         }
       });
 
-      // Login (Netlify Functions)
+      // Login (modo estático: localStorage)
       $('#formLogin').addEventListener('submit', async function(e){
         e.preventDefault();
         const f = new FormData(e.target);
@@ -862,23 +885,32 @@
         const btn = e.target.querySelector('button[type="submit"]');
         const originalText = btn.textContent; btn.classList.add('is-loading'); btn.textContent = 'Ingresando...';
         try {
-          const res = await fetch('/auth/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password })
-          });
-          const data = await res.json().catch(()=>({}));
-          if(res.ok && data?.ok){
-            const name = data.user?.name || (email.split('@')[0]);
-            user = { name, email, token: data.token };
-            localStorage.setItem('servis_user', JSON.stringify(user));
-            renderAuth(); closeAuth(); showToast(data.message || `Hola ${user.name}, sesión iniciada.`);
-            e.target.reset();
-          } else {
-            showToast(data?.message || 'No se pudo iniciar sesión.');
+          const users = JSON.parse(localStorage.getItem('servis_users')||'[]');
+          const found = users.find(u=> (u.email||'').toLowerCase() === email.toLowerCase());
+          if(!found){
+            showToast('No existe una cuenta con ese correo.');
+            // Ofrecer registrarse con el mismo correo
+            setTimeout(()=>{
+              const goRegister = confirm('No encontramos tu cuenta. ¿Deseas registrarte con este correo?');
+              if(goRegister){
+                $('#formLogin').classList.add('hidden');
+                $('#formRegister').classList.remove('hidden');
+                const regEmail = document.querySelector('#formRegister input[name="email"]');
+                const regPass = document.querySelector('#formRegister input[name="password"]');
+                regEmail && (regEmail.value = email);
+                regPass && (regPass.value = password);
+                const regName = document.querySelector('#formRegister input[name="name"]');
+                regName && regName.focus();
+              }
+            }, 50);
+            return;
           }
-        } catch(err){
-          showToast('Error de red. Ejecuta en Netlify para probar login.');
+          if(found.password !== password){ showToast('Contraseña incorrecta.'); return; }
+          const name = found.name || (email.split('@')[0]);
+          user = { name, email };
+          localStorage.setItem('servis_user', JSON.stringify(user));
+          renderAuth(); loadBalanceForCurrentUser(); loadOrdersForCurrentUser(); closeAuth(); showToast(`Hola ${name}, sesión iniciada.`);
+          e.target.reset();
         } finally {
           btn.classList.remove('is-loading'); btn.textContent = originalText;
         }
@@ -887,7 +919,7 @@
       // Recarga
       const metodoEl = document.getElementById('recargaMetodo');
       const recargarBtn = document.getElementById('recargarBtn');
-      const paypalContainer = document.getElementById('paypal-container-XD3GVWKNUD5TS');
+      const paypalContainer = document.getElementById('paypal-container-CPCSKSXGBM3DN');
       function updateRecargaUI(){
         const isPaypal = metodoEl?.value === 'paypal';
         if(paypalContainer){ paypalContainer.style.display = isPaypal ? 'block' : 'none'; }
@@ -909,7 +941,7 @@
           return;
         }
         balance = Math.round((balance + val) * 100) / 100;
-        localStorage.setItem('servis_balance', balance);
+        saveBalance();
         renderBalance(); showToast(`Recarga de $${fmt(val)} realizada.`);
         $('#recargaMonto').value = '';
       });
@@ -953,7 +985,7 @@
           btn.classList.add('is-loading');
           btn.textContent = 'Generando...';
           balance = Math.round((balance - total) * 100) / 100;
-          localStorage.setItem('servis_balance', balance);
+          saveBalance();
           const currencyMsg = svc === 'cambio_notas' ? 'S/' : '$';
           const discountNote = svc === 'cambio_notas' ? '' : ' (descuento aplicado).';
           renderBalance(); showToast(`${svc} pagado: ${currencyMsg}${fmt(total)}${discountNote}`);
@@ -982,32 +1014,22 @@
       
       // (el manejo de generación de orden se realiza dentro de cada formulario con validación de sesión)
 
-  // Función para agregar órdenes
+  // Función para agregar órdenes con persistencia por usuario
   function addOrder(servicio, monto) {
     const orderId = 'order-' + Math.floor(Math.random() * 1000000);
     const date = new Date().toLocaleString();
     const statuses = ['pending', 'processing', 'completed'];
     const randomStatus = statuses[Math.floor(Math.random() * statuses.length)];
     const currency = servicio === 'cambio_notas' ? 'S/' : '$';
-    
-    const orderHTML = `
-      <div class="order-item" id="${orderId}">
-        <div>
-          <div class="font-semibold">${servicio}</div>
-          <div class="text-sm opacity-80">Monto: ${currency}${monto} • ${date}</div>
-        </div>
-        <div class="order-status status-${randomStatus}">
-          ${randomStatus === 'pending' ? 'Pendiente' : randomStatus === 'processing' ? 'Procesando' : 'Completado'}
-        </div>
-      </div>
-    `;
-    
-    document.querySelector('.orders-list').insertAdjacentHTML('afterbegin', orderHTML);
-    document.getElementById('empty-orders').style.display = 'none';
+    const newOrder = { id: orderId, servicio, monto: String(monto), currency, date, status: randomStatus };
+    const list = JSON.parse(localStorage.getItem(ordersKey()) || '[]');
+    list.unshift(newOrder);
+    localStorage.setItem(ordersKey(), JSON.stringify(list));
+    renderOrders(list);
   }
 
       // init
-      renderAuth(); renderBalance();
+      renderAuth(); loadBalanceForCurrentUser(); loadOrdersForCurrentUser();
 
     })();
   </script>
