@@ -342,6 +342,7 @@
           <span class="text-slate-400">Usuario</span>
           <span id="currentUserName" class="font-semibold ml-1"></span>
         </div>
+        <button id="logoutBtn" class="btn-ghost px-3 py-2 rounded-md text-xs hidden">Cerrar sesión</button>
       </div>
     </header>
 
@@ -811,6 +812,7 @@
       const authArea = $('#authArea');
       const userBadge = $('#currentUserBadge');
       const userNameEl = $('#currentUserName');
+      const logoutBtn = $('#logoutBtn');
 
       // Base de API externa (local Flask)
       const API_BASE = 'http://127.0.0.1:5001';
@@ -862,7 +864,24 @@
         const uname = localStorage.getItem('servis_username') || '';
         if(uname){ userBadge?.classList.remove('hidden'); if(userNameEl) userNameEl.textContent = uname; }
         else { userBadge?.classList.add('hidden'); }
+        // Mostrar/Ocultar botón de logout según sesión
+        if(logoutBtn){ logoutBtn.classList.toggle('hidden', !window.apiAuthReady); }
       }
+
+      // Cerrar sesión: limpiar token y restablecer UI
+      window.logout = function logout(){
+        try {
+          localStorage.removeItem('servis_token');
+          localStorage.removeItem('servis_username');
+        } catch(e){}
+        window.apiAuthReady = false;
+        balance = 0; renderBalance();
+        showToast('Sesión cerrada.');
+        renderAuth();
+      };
+
+      // Click del botón de logout
+      logoutBtn && logoutBtn.addEventListener('click', window.logout);
 
       function renderBalance(){
         balanceEl.textContent = `$${fmt(balance)}`;
