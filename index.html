@@ -98,6 +98,10 @@
       width: 20px;
       height: 20px;
     }
+    /* Alto contraste legible para texto sobre fondos difusos */
+    .high-contrast { color:#ffffff; text-shadow:0 1px 2px rgba(0,0,0,.65); }
+    .label-contrast { color:#eaf2ff; text-shadow:0 1px 1px rgba(0,0,0,.5); }
+    .muted-contrast { color:#cbd5e1; }
     /* Animación de check */
     .success-animation {
       position: fixed;
@@ -617,7 +621,7 @@
           <!-- Saldo desde API externa (S/) -->
           <div class="p-4 glass rounded-lg">
             <div class="text-xs text-slate-400">Saldo (API)</div>
-            <div id="saldo" class="text-2xl font-extrabold mt-2">Cargando saldo...</div>
+            <p class="text-2xl font-extrabold mt-2 high-contrast">Tu saldo: S/ <span id="saldo">0.00</span></p>
           </div>
 
           <div class="p-4 glass rounded-lg">
@@ -662,7 +666,20 @@
               <p class="text-sm text-slate-400 mt-2">Los fondos se guardan en tu balance para pagar servicios con descuento.</p>
             </form>
 
-            
+            <!-- Registro/Login simples (API externa) -->
+            <div class="mt-6 border-t border-white/5 pt-4 space-y-3">
+              <h2 class="label-contrast text-base font-semibold">Registro</h2>
+              <input id="newuser" placeholder="Usuario" class="w-full rounded-md bg-transparent border border-white/5 p-2" />
+              <input id="newpass" type="password" placeholder="Contraseña" class="w-full rounded-md bg-transparent border border-white/5 p-2" />
+              <button type="button" onclick="registrar()" class="px-4 py-2 rounded-md bg-gradient-to-r from-[#7c4dff] to-[#5ee7df] text-[#001]">Registrar</button>
+
+              <h2 class="label-contrast text-base font-semibold mt-6">Login</h2>
+              <input id="username" placeholder="Usuario" class="w-full rounded-md bg-transparent border border-white/5 p-2" />
+              <input id="password" type="password" placeholder="Contraseña" class="w-full rounded-md bg-transparent border border-white/5 p-2" />
+              <button type="button" onclick="login()" class="px-4 py-2 rounded-md bg-gradient-to-r from-[#7c4dff] to-[#5ee7df] text-[#001]">Ingresar</button>
+            </div>
+
+          
           </div>
         </div>
       </section>
@@ -776,27 +793,23 @@
       const recBalance = $('#recBalance');
       const authArea = $('#authArea');
 
+      // Base de API externa
+      const API_BASE = 'https://<tu-servicio>.onrender.com';
+
       // Mostrar saldo desde API externa (S/)
-      async function mostrarSaldo(username){
+      async function actualizarSaldo(){
+        const el = document.getElementById('saldo');
         try {
-          const el = document.getElementById('saldo');
-          if(el) el.textContent = 'Cargando saldo...';
-          if(!username){
-            if(el) el.textContent = 'Saldo: S/ --';
-            return;
-          }
-          const res = await fetch(`https://saldo-api.onrender.com/api/saldo?username=${encodeURIComponent(username)}`);
-          if(!res.ok){
-            const msg = res.status === 404 ? 'No encontrado' : `Error ${res.status}`;
-            if(el) el.textContent = `Saldo: S/ -- (${msg})`;
-            return;
-          }
+          const username = localStorage.getItem('username');
+          if(!username){ if(el) el.textContent = '0.00'; return; }
+          const res = await fetch(`${API_BASE}/api/saldo?username=${encodeURIComponent(username)}`);
           const data = await res.json();
-          const valor = Number(data?.saldo || 0);
-          if(el) el.textContent = `Saldo: S/ ${valor.toFixed(2)}`;
+          if(data?.saldo !== undefined){
+            const valor = Number(data.saldo) || 0;
+            if(el) el.innerText = valor.toFixed(2);
+          }
         } catch(err){
-          const el = document.getElementById('saldo');
-          if(el) el.textContent = 'Saldo: S/ -- (error de red)';
+          if(el) el.innerText = '--';
         }
       }
       const authModal = $('#authModal');
@@ -818,6 +831,7 @@
           $('#btnLogin').addEventListener('click', ()=> openAuth('login'));
           $('#btnRegister').addEventListener('click', ()=> openAuth('register'));
         }
+        updateProtectedSections();
       }
 
       function renderBalance(){
@@ -837,6 +851,18 @@
         $('#formLogin').classList.toggle('hidden', mode !== 'login');
       }
       function closeAuth(){ authModal.classList.add('hidden'); }
+
+      // Ocultar/mostrar UI dependiente de sesión
+      function updateProtectedSections(){
+        const isLogged = !!user;
+        balanceEl && balanceEl.classList.toggle('hidden', !isLogged);
+        balanceBig && balanceBig.classList.toggle('hidden', !isLogged);
+        const recargaSection = document.getElementById('recarga');
+        if(recargaSection){
+          // Si no hay sesión, mantener la sección oculta
+          recargaSection.classList.toggle('hidden', !isLogged);
+        }
+      }
 
       // Órdenes: render y carga desde storage por usuario
       function renderOrders(list){
@@ -866,6 +892,12 @@
       // Navigation
       $$('[data-link]').forEach(btn=> btn.addEventListener('click', e=>{
         const id = e.currentTarget.getAttribute('data-link');
+        // Bloquear navegación a Recarga si no hay sesión
+        if(id === 'recarga' && !user){
+          openAuth('login');
+          showToast('Por favor, inicia sesión o regístrate para continuar.');
+          return;
+        }
         // Marcar activo el botón actual
         $$('[data-link]').forEach(b=> b.classList.remove('active'));
         e.currentTarget.classList.add('active');
@@ -1000,6 +1032,46 @@
         $('#recargaMonto').value = '';
       });
 
+      // Registro/Login simples (API externa) expuestos globalmente
+      window.registrar = async function registrar(){
+        const username = document.getElementById('newuser')?.value;
+        const password = document.getElementById('newpass')?.value;
+        try{
+          const res = await fetch(`${API_BASE}/api/registro`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+          });
+          const data = await res.json();
+          alert(JSON.stringify(data));
+        } catch(err){
+          alert(JSON.stringify({ error: 'Network error', detail: String(err) }));
+        }
+      };
+
+      window.login = async function login(){
+        const username = document.getElementById('username')?.value;
+        const password = document.getElementById('password')?.value;
+        try{
+          const res = await fetch(`${API_BASE}/api/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+          });
+          const data = await res.json();
+          if(data?.success){
+            localStorage.setItem('username', username);
+            actualizarSaldo();
+          }
+          alert(JSON.stringify(data));
+        } catch(err){
+          alert(JSON.stringify({ error: 'Network error', detail: String(err) }));
+        }
+      };
+
+      // Exponer actualizarSaldo globalmente para window.onload si se desea
+      window.actualizarSaldo = actualizarSaldo;
+
       // (Telegram integrado en el submit del formulario de Recarga)
 
       // Lógica de formularios (descuento para servicios regulares; valor fijo para cambio_notas)
@@ -1085,10 +1157,10 @@
   }
 
       // init
-      renderAuth(); loadBalanceForCurrentUser(); loadOrdersForCurrentUser();
-      // Invoca saldo API con usuario activo (nombre o prefijo del email)
-      const activeUsername = (user?.name) || (user?.email ? user.email.split('@')[0] : null);
-      mostrarSaldo(activeUsername || 'ElreyA25');
+      renderAuth(); loadBalanceForCurrentUser(); loadOrdersForCurrentUser(); updateProtectedSections();
+      // Invoca saldo API (juik) de forma periódica con usuario activo
+      actualizarSaldo();
+      setInterval(actualizarSaldo, 5000);
 
     })();
   </script>
