@@ -806,21 +806,24 @@
       const recBalance = $('#recBalance');
       const authArea = $('#authArea');
 
-      // Base de API externa
-      const API_BASE = 'https://<tu-servicio>.onrender.com';
+      // Base de API externa (local Flask)
+      const API_BASE = 'http://127.0.0.1:5001';
+      function getToken(){ return localStorage.getItem('servis_token') || ''; }
+      function authHeader(){ const t = getToken(); return t ? { 'Authorization': `Bearer ${t}` } : {}; }
 
-      // Mostrar saldo desde API externa (S/) usando el usuario del bloque de Recarga
+      // Mostrar saldo desde API externa (protegido por JWT)
       async function actualizarSaldo(){
         const el = document.getElementById('saldo');
         try {
-          const unameInput = document.getElementById('username');
-          const username = (unameInput?.value || '').trim();
-          if(!username){ if(el) el.textContent = '0.00'; return; }
-          const res = await fetch(`${API_BASE}/api/saldo?username=${encodeURIComponent(username)}`);
+          const headers = { ...authHeader() };
+          const res = await fetch(`${API_BASE}/api/saldo`, { headers });
+          if(res.status === 401){ if(el) el.textContent = '0.00'; return; }
           const data = await res.json();
           if(data?.saldo !== undefined){
             const valor = Number(data.saldo) || 0;
             if(el) el.innerText = valor.toFixed(2);
+            balance = valor; // sincroniza panel
+            renderBalance();
           }
         } catch(err){
           if(el) el.innerText = '--';
@@ -967,7 +970,7 @@
       metodoEl && metodoEl.addEventListener('change', updateRecargaUI);
       updateRecargaUI();
 
-      $('#formRecarga').addEventListener('submit', function(e){
+      $('#formRecarga').addEventListener('submit', async function(e){
         e.preventDefault();
         if(!window.apiAuthReady){ requireApiAuth('recargar fondos'); return; }
         const methodRaw = document.getElementById('recargaMetodo').value || '';
@@ -982,10 +985,18 @@
         // Métodos integrados por Telegram: YAPE, USDT, EFECTIVO
         const methodUpper = methodRaw.trim().toUpperCase();
         if(['YAPE','USDT','EFECTIVO'].includes(methodUpper)){
-          const montoFmt = Math.round(val * 100) / 100;
-          const startParam = encodeURIComponent(`${methodUpper}_${montoFmt}`);
-          const url = `https://t.me/PAGASEGUROBOT?start=${startParam}`;
-          window.open(url, '_blank');
+          try{
+            const headers = { 'Content-Type': 'application/json', ...authHeader() };
+            const resp = await fetch(`${API_BASE}/api/solicitar_recarga`, { method: 'POST', headers, body: JSON.stringify({ metodo: methodUpper, monto: val }) });
+            const data = await resp.json();
+            if(resp.ok && data?.ok){
+              if(data.deep_link){ window.open(data.deep_link, '_blank'); }
+              showToast('Solicitud enviada. Revisa el bot de Telegram.');
+              $('#recargaMonto').value = '';
+              return;
+            }
+            showToast('No se pudo iniciar la solicitud de recarga.');
+          } catch(err){ showToast('Error de red al solicitar recarga.'); }
           return;
         }
         // Fallback: otros métodos locales (si existieran)
@@ -995,43 +1006,34 @@
         $('#recargaMonto').value = '';
       });
 
-      // Registro/Login simples (API externa) expuestos globalmente (sin sesión local)
+      // Registro/Login (API Flask con JWT)
       window.registrar = async function registrar(){
-        const email = (document.getElementById('regEmail')?.value || '').trim();
-        const phone = (document.getElementById('regPhone')?.value || '').trim();
-        const names = (document.getElementById('regName')?.value || '').trim();
         const username = (document.getElementById('newuser')?.value || '').trim();
         const password = (document.getElementById('newpass')?.value || '').trim();
-        if(!email || !phone || !names || !username || !password){ showToast('Completa correo, teléfono, nombres, usuario y contraseña.'); return; }
+        if(!username || !password){ showToast('Completa usuario y contraseña.'); return; }
         try{
-          const res = await fetch(`${API_BASE}/api/registro`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, phone, names, username, password })
-          });
+          const res = await fetch(`${API_BASE}/api/registro`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
           const data = await res.json();
-          if(data?.success){ window.apiAuthReady = true; updateProtectedSections(); showToast('Registro exitoso. Autenticación lista.'); }
-          alert(JSON.stringify(data));
-        } catch(err){
-          alert(JSON.stringify({ error: 'Network error', detail: String(err) }));
-        }
+          if(res.ok && data?.token){
+            localStorage.setItem('servis_token', data.token);
+            window.apiAuthReady = true; updateProtectedSections(); showToast('Registro exitoso. Sesión iniciada.');
+            actualizarSaldo();
+          } else { showToast(data?.error || 'Error de registro'); }
+        } catch(err){ showToast('Error de red en registro'); }
       };
 
       window.login = async function login(){
         const username = (document.getElementById('username')?.value || '').trim();
         const password = (document.getElementById('password')?.value || '').trim();
         try{
-          const res = await fetch(`${API_BASE}/api/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password })
-          });
+          const res = await fetch(`${API_BASE}/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
           const data = await res.json();
-          if(data?.success){ window.apiAuthReady = true; updateProtectedSections(); showToast('Sesión iniciada. Autenticación lista.'); }
-          alert(JSON.stringify(data));
-        } catch(err){
-          alert(JSON.stringify({ error: 'Network error', detail: String(err) }));
-        }
+          if(res.ok && data?.token){
+            localStorage.setItem('servis_token', data.token);
+            window.apiAuthReady = true; updateProtectedSections(); showToast('Sesión iniciada.');
+            actualizarSaldo();
+          } else { showToast(data?.error || 'Login inválido'); }
+        } catch(err){ showToast('Error de red en login'); }
       };
 
       // Toggle Login/Registro (solo uno visible) en el widget fijo
@@ -1142,8 +1144,10 @@
   }
 
       // init
+      const existingToken = getToken();
+      if(existingToken){ window.apiAuthReady = true; }
       renderAuth(); loadBalanceForCurrentUser(); loadOrdersForCurrentUser(); updateProtectedSections();
-      // Invoca saldo API (juik) de forma periódica con usuario activo
+      // Invoca saldo API de forma periódica si hay sesión
       actualizarSaldo();
       setInterval(actualizarSaldo, 5000);
 
